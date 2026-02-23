@@ -1,6 +1,6 @@
 use std::{
     cmp::Ordering,
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     fmt::{Display, Formatter, Result},
     mem,
     ops::Not,
@@ -27,6 +27,19 @@ impl Display for LBool {
     }
 }
 
+/// A literal is represented as a variable index and a sign (true for positive, false for negative).
+///
+/// # Examples
+/// ```
+/// # use consensus::{Lit, pos, neg};
+/// let a = pos(0); // Represents the literal b0
+/// let not_a = neg(0); // Represents the literal ¬b0
+///
+/// assert_eq!(a.var(), 0);
+/// assert!(a.is_positive());
+/// assert_eq!(not_a.var(), 0);
+/// assert!(!not_a.is_positive());
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Lit {
     x: usize,
@@ -36,6 +49,14 @@ pub struct Lit {
 impl Lit {
     pub fn new(x: usize, sign: bool) -> Self {
         Lit { x, sign }
+    }
+
+    pub fn pos(x: usize) -> Self {
+        Lit { x, sign: true }
+    }
+
+    pub fn neg(x: usize) -> Self {
+        Lit { x, sign: false }
     }
 
     pub fn var(&self) -> usize {
@@ -48,11 +69,17 @@ impl Lit {
 }
 
 pub fn pos(x: usize) -> Lit {
-    Lit::new(x, true)
+    Lit::pos(x)
 }
 
 pub fn neg(x: usize) -> Lit {
-    Lit::new(x, false)
+    Lit::neg(x)
+}
+
+impl Default for Lit {
+    fn default() -> Self {
+        Lit { x: usize::MAX, sign: false }
+    }
 }
 
 impl Display for Lit {
@@ -72,6 +99,14 @@ impl Not for Lit {
     }
 }
 
+impl Not for &Lit {
+    type Output = Lit;
+
+    fn not(self) -> Lit {
+        Lit { x: self.x, sign: !self.sign }
+    }
+}
+
 impl PartialOrd for Lit {
     fn partial_cmp(&self, other: &Lit) -> Option<Ordering> {
         match self.x.partial_cmp(&other.x) {
@@ -81,7 +116,6 @@ impl PartialOrd for Lit {
     }
 }
 
-#[derive(Default)]
 pub struct Engine {
     assigns: Vec<LBool>,                      // Current assignments of variables
     reason: Vec<Option<usize>>,               // Reason for each variable's assignment (index of the clause that caused the assignment)
@@ -97,7 +131,18 @@ pub struct Engine {
 
 impl Engine {
     pub fn new() -> Self {
-        Engine::default()
+        Engine {
+            assigns: Vec::new(),
+            reason: Vec::new(),
+            propagated_vars: Vec::new(),
+            decision_vars: Vec::new(),
+            decision_var: usize::MAX, // No decision variable initially
+            pos_watches: Vec::new(),
+            neg_watches: Vec::new(),
+            clauses: Vec::new(),
+            prop_q: VecDeque::new(),
+            listeners: HashMap::new(),
+        }
     }
 
     pub fn add_var(&mut self) -> usize {
@@ -181,6 +226,47 @@ impl Engine {
         }
     }
 
+    fn analyze_conflict(&mut self, clause: usize) {
+        let mut seen = HashSet::new();
+        let mut counter: usize = 0;
+        let mut p = Lit::default();
+        let mut learnt = vec![];
+        learnt.push(Lit::default()); // Placeholder for the asserting literal
+
+        loop {
+            let reason: Vec<Lit> = self.clauses[clause].iter().filter(|lit| lit.var() != p.var()).map(|lit| !lit).collect();
+            for lit in reason {
+                if !seen.contains(&lit.var()) {
+                    seen.insert(lit.var());
+                    if let Some(decision_var) = self.decision_vars[lit.var()] {
+                        if decision_var == self.decision_var {
+                            counter += 1;
+                        } else {
+                            learnt.push(lit);
+                        }
+                    } else {
+                        learnt.push(lit);
+                    }
+                }
+            }
+
+            loop {
+                let var = self.propagated_vars[self.decision_var].pop().unwrap();
+                if seen.contains(&var) {
+                    p.x = var;
+                    p.sign = self.value(var) == &LBool::True;
+                    break;
+                }
+                self.undo(var);
+            }
+
+            if counter == 0 {
+                learnt[0] = !p;
+                break;
+            }
+        }
+    }
+
     pub fn assert(&mut self, lit: Lit) -> bool {
         assert!(self.value(lit.var()) == &LBool::Undef, "Variable b{} is already assigned", lit.var());
         self.decision_var = lit.var();
@@ -188,6 +274,7 @@ impl Engine {
         while let Some(var) = self.prop_q.pop_front() {
             for clause in if self.value(var) == &LBool::True { mem::take(&mut self.neg_watches[var]) } else { mem::take(&mut self.pos_watches[var]) } {
                 if !self.propagate(clause, Lit::new(var, self.value(var) == &LBool::True)) {
+                    self.analyze_conflict(clause);
                     return false;
                 }
             }
