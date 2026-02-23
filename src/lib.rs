@@ -286,6 +286,7 @@ mod tests {
         let a = engine.add_var();
         let b = engine.add_var();
 
+        // (¬a ∨ b)
         engine.add_clause(vec![neg(a), pos(b)]);
 
         engine.assert(pos(a));
