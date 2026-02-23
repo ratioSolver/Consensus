@@ -205,3 +205,131 @@ impl Display for Engine {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lit::{neg, pos};
+
+    #[test]
+    fn test_basic_assignment_and_value() {
+        let mut engine = Engine::new();
+        let a = engine.add_var();
+
+        assert_eq!(*engine.value(a), LBool::Undef);
+
+        engine.assert(pos(a));
+        assert_eq!(*engine.value(a), LBool::True);
+        assert_eq!(engine.lit_value(&pos(a)), LBool::True);
+        assert_eq!(engine.lit_value(&neg(a)), LBool::False);
+    }
+
+    #[test]
+    fn test_unit_propagation_simple() {
+        let mut engine = Engine::new();
+        let a = engine.add_var();
+        let b = engine.add_var();
+
+        // Clause: (¬a ∨ b)  => If a is true, b must be true.
+        engine.add_clause(vec![neg(a), pos(b)]);
+
+        engine.assert(pos(a));
+
+        // b should be propagated to True
+        assert_eq!(*engine.value(b), LBool::True, "b should be propagated by unit clause");
+        assert_eq!(engine.decision_var(b), Some(a), "a should be the decision variable for b");
+    }
+
+    #[test]
+    fn test_chained_propagation() {
+        let mut engine = Engine::new();
+        let a = engine.add_var();
+        let b = engine.add_var();
+        let c = engine.add_var();
+
+        // (¬a ∨ b) and (¬b ∨ c)
+        // a -> b -> c
+        engine.add_clause(vec![neg(a), pos(b)]);
+        engine.add_clause(vec![neg(b), pos(c)]);
+
+        engine.assert(pos(a));
+
+        assert_eq!(*engine.value(c), LBool::True, "c should propagate via b");
+    }
+
+    #[test]
+    fn test_two_watched_literals_movement() {
+        let mut engine = Engine::new();
+        let a = engine.add_var();
+        let b = engine.add_var();
+        let c = engine.add_var();
+
+        // Clause: (a ∨ b ∨ c)
+        // Initially watching a and b.
+        engine.add_clause(vec![pos(a), pos(b), pos(c)]);
+
+        // Assign a = False.
+        // 2WL should move watch from 'a' to 'c' because 'b' is still Undef.
+        engine.assert(neg(a));
+        assert_eq!(*engine.value(b), LBool::Undef, "b should still be undef");
+        assert_eq!(*engine.value(c), LBool::Undef, "c should still be undef");
+
+        // Now assign b = False.
+        // This should trigger propagation on c.
+        engine.assert(neg(b));
+        assert_eq!(*engine.value(c), LBool::True, "c must be true now");
+    }
+
+    #[test]
+    fn test_retraction_logic() {
+        let mut engine = Engine::new();
+        let a = engine.add_var();
+        let b = engine.add_var();
+
+        engine.add_clause(vec![neg(a), pos(b)]);
+
+        engine.assert(pos(a));
+        assert_eq!(*engine.value(b), LBool::True);
+
+        // Retract a
+        engine.retract(a);
+
+        assert_eq!(*engine.value(a), LBool::Undef, "a should be undone");
+        assert_eq!(*engine.value(b), LBool::Undef, "b should be undone automatically");
+    }
+
+    #[test]
+    fn test_listeners() {
+        use std::sync::{Arc, Mutex};
+
+        let mut engine = Engine::new();
+        let a = engine.add_var();
+        let b = engine.add_var();
+
+        let triggered = Arc::new(Mutex::new(false));
+        let triggered_clone = Arc::clone(&triggered);
+
+        // Add listener to b
+        engine.add_listener(b, move |_, _| {
+            let mut val = triggered_clone.lock().unwrap();
+            *val = true;
+        });
+
+        // (¬a ∨ b)
+        engine.add_clause(vec![neg(a), pos(b)]);
+
+        // Assert a, which propagates b, which should fire the listener
+        engine.assert(pos(a));
+
+        assert!(*triggered.lock().unwrap(), "Listener on b should have been triggered");
+    }
+
+    #[test]
+    #[should_panic(expected = "already assigned")]
+    fn test_double_assertion_panic() {
+        let mut engine = Engine::new();
+        let a = engine.add_var();
+        engine.assert(pos(a));
+        engine.assert(neg(a)); // Should panic
+    }
+}

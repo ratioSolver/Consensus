@@ -43,6 +43,14 @@ impl Lit {
     }
 }
 
+pub fn pos(x: usize) -> Lit {
+    Lit::new(x, true)
+}
+
+pub fn neg(x: usize) -> Lit {
+    Lit::new(x, false)
+}
+
 impl Display for Lit {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self.sign {
