@@ -14,6 +14,9 @@ type Callback = Box<dyn Fn(&Engine, usize)>;
 pub struct Engine {
     assigns: Vec<LBool>,                      // Current assignments of variables
     reason: Vec<Option<usize>>,               // Reason for each variable's assignment (index of the clause that caused the assignment)
+    propagated_vars: Vec<Vec<usize>>,         // Variables that have been propagated by decision variables
+    decision_vars: Vec<Option<usize>>,        // Decision variables that caused the propagation of each variable
+    decision_var: usize,                      // Current decision variable index
     pos_watches: Vec<Vec<usize>>,             // Clauses watching the positive literal of each variable
     neg_watches: Vec<Vec<usize>>,             // Clauses watching the negative literal of each variable
     clauses: Vec<Vec<Lit>>,                   // List of clauses in the engine
@@ -30,6 +33,8 @@ impl Engine {
         let var_id = self.assigns.len();
         self.assigns.push(LBool::Undef);
         self.reason.push(None);
+        self.propagated_vars.push(Vec::new());
+        self.decision_vars.push(None);
         self.pos_watches.push(Vec::new());
         self.neg_watches.push(Vec::new());
         var_id
@@ -83,6 +88,10 @@ impl Engine {
             LBool::Undef => {
                 self.assigns[lit.var()] = if lit.is_positive() { LBool::True } else { LBool::False };
                 self.reason[lit.var()] = reason;
+                if lit.var() != self.decision_var {
+                    self.propagated_vars[self.decision_var].push(lit.var());
+                    self.decision_vars[lit.var()] = Some(self.decision_var);
+                }
                 self.prop_q.push_back(lit.var());
                 if let Some(listeners) = self.listeners.get(&lit.var()) {
                     for listener in listeners {
@@ -97,6 +106,8 @@ impl Engine {
     }
 
     pub fn assert(&mut self, lit: Lit) -> bool {
+        assert!(self.value(lit.var()) == &LBool::Undef, "Variable b{} is already assigned", lit.var());
+        self.decision_var = lit.var();
         self.enqueue(lit, None);
         while let Some(var) = self.prop_q.pop_front() {
             for clause in if self.value(var) == &LBool::True { mem::take(&mut self.neg_watches[var]) } else { mem::take(&mut self.pos_watches[var]) } {
