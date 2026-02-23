@@ -518,4 +518,45 @@ mod tests {
         engine.assert(pos(a));
         engine.assert(neg(a)); // Should panic
     }
+
+    #[test]
+    fn test_conflict_analysis() {
+        let mut engine = Engine::new();
+        let x1 = engine.add_var();
+        let x2 = engine.add_var();
+        let x3 = engine.add_var();
+        let x4 = engine.add_var();
+        let x5 = engine.add_var();
+        let x6 = engine.add_var();
+        let x7 = engine.add_var();
+        let x8 = engine.add_var();
+        let x9 = engine.add_var();
+
+        // (x1 ∨ x2)
+        engine.add_clause(vec![pos(x1), pos(x2)]);
+        // (x1 ∨ x3 ∨ x7)
+        engine.add_clause(vec![pos(x1), pos(x3), pos(x7)]);
+        // (¬x2 ∨ ¬x3 ∨ x4)
+        engine.add_clause(vec![neg(x2), neg(x3), pos(x4)]);
+        // (¬x4 ∨ x5 ∨ x8)
+        engine.add_clause(vec![neg(x4), pos(x5), pos(x8)]);
+        // (¬x4 ∨ x6 ∨ x9)
+        engine.add_clause(vec![neg(x4), pos(x6), pos(x9)]);
+        // (¬x5 ∨ ¬x6)
+        engine.add_clause(vec![neg(x5), neg(x6)]);
+
+        // Assert ¬x7
+        engine.assert(neg(x7));
+        // Assert ¬x8
+        engine.assert(neg(x8));
+        // Assert ¬x9
+        engine.assert(neg(x9));
+
+        // Assert ¬x1, which should trigger conflict analysis
+        engine.assert(neg(x1));
+
+        let explanation = engine.get_conflict_explanation().expect("There should be a conflict explanation");
+        let expected_explanation = vec![neg(x4), pos(x8), pos(x9)];
+        assert_eq!(explanation, expected_explanation, "Conflict explanation should match expected");
+    }
 }
