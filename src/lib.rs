@@ -1,14 +1,85 @@
-pub mod lit;
-
 use std::{
+    cmp::Ordering,
     collections::{HashMap, VecDeque},
     fmt::{Display, Formatter, Result},
     mem,
+    ops::Not,
 };
 
-use crate::lit::LBool;
-pub use lit::Lit;
 type Callback = Box<dyn Fn(&Engine, usize)>;
+
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub enum LBool {
+    True,
+    False,
+    #[default]
+    Undef,
+}
+
+impl Display for LBool {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        let s = match self {
+            LBool::True => "True",
+            LBool::False => "False",
+            LBool::Undef => "Undef",
+        };
+        write!(f, "{}", s)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Lit {
+    x: usize,
+    sign: bool,
+}
+
+impl Lit {
+    pub fn new(x: usize, sign: bool) -> Self {
+        Lit { x, sign }
+    }
+
+    pub fn var(&self) -> usize {
+        self.x
+    }
+
+    pub fn is_positive(&self) -> bool {
+        self.sign
+    }
+}
+
+pub fn pos(x: usize) -> Lit {
+    Lit::new(x, true)
+}
+
+pub fn neg(x: usize) -> Lit {
+    Lit::new(x, false)
+}
+
+impl Display for Lit {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        match self.sign {
+            true => write!(f, "b{}", self.x),
+            false => write!(f, "¬b{}", self.x),
+        }
+    }
+}
+
+impl Not for Lit {
+    type Output = Lit;
+
+    fn not(self) -> Lit {
+        Lit { x: self.x, sign: !self.sign }
+    }
+}
+
+impl PartialOrd for Lit {
+    fn partial_cmp(&self, other: &Lit) -> Option<Ordering> {
+        match self.x.partial_cmp(&other.x) {
+            Some(Ordering::Equal) => self.sign.partial_cmp(&other.sign),
+            ord => ord,
+        }
+    }
+}
 
 #[derive(Default)]
 pub struct Engine {
@@ -209,7 +280,6 @@ impl Display for Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lit::{neg, pos};
 
     #[test]
     fn test_basic_assignment_and_value() {
