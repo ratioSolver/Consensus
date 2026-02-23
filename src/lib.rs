@@ -64,6 +64,11 @@ impl Engine {
         }
     }
 
+    /// Returns the decision variable that caused the propagation of the given variable, if any.
+    pub fn decision_var(&self, var: usize) -> Option<usize> {
+        self.decision_vars[var]
+    }
+
     pub fn add_clause(&mut self, lits: Vec<Lit>) -> bool {
         if lits.is_empty() {
             return false;
@@ -117,6 +122,27 @@ impl Engine {
             }
         }
         true
+    }
+
+    pub fn retract(&mut self, var: usize) {
+        assert!(self.value(var) != &LBool::Undef, "Variable b{} is not assigned", var);
+        if let Some(decision_var) = self.decision_vars[var] {
+            for propagated_var in mem::take(&mut self.propagated_vars[decision_var]) {
+                self.undo(propagated_var);
+            }
+        } else {
+            for propagated_var in mem::take(&mut self.propagated_vars[var]) {
+                self.undo(propagated_var);
+            }
+            self.undo(var);
+        }
+    }
+
+    fn undo(&mut self, var: usize) {
+        assert!(self.propagated_vars[var].is_empty(), "Variable b{} has propagated variables that must be retracted first", var);
+        self.assigns[var] = LBool::Undef;
+        self.reason[var] = None;
+        self.decision_vars[var] = None;
     }
 
     fn propagate(&mut self, clause_id: usize, lit: Lit) -> bool {
