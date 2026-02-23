@@ -1,4 +1,4 @@
-mod lit;
+pub mod lit;
 
 use std::{
     collections::{HashMap, VecDeque},
