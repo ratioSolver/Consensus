@@ -267,7 +267,7 @@ impl Engine {
     fn analyze_conflict(&mut self, mut clause: usize) {
         self.seen.fill(false);
         let mut counter: usize = 0;
-        let mut p: Option<Lit> = None;
+        let mut p: Option<(Lit, usize)> = None;
         self.learnt.clear();
         self.learnt.push(Lit::default()); // Placeholder for the asserting literal
 
@@ -277,7 +277,7 @@ impl Engine {
                 let v = lit.var();
 
                 // Skip the variable we are currently resolving away
-                if Some(v) == p.map(|l| l.var()) {
+                if Some(v) == p.map(|l| l.0.var()) {
                     continue;
                 }
 
@@ -287,7 +287,7 @@ impl Engine {
                         counter += 1;
                     } else {
                         // This literal comes from a previous decision level
-                        self.learnt.push(*lit);
+                        self.learnt.push(!lit);
                     }
                 }
             }
@@ -295,10 +295,11 @@ impl Engine {
             // 2. Find the next variable from the trail assigned at this level
             p = loop {
                 let v = self.propagated_vars[self.decision_var].pop().expect("There should be a variable to resolve away");
-                let sign = self.value(v) == &LBool::True;
                 if !self.seen[v] {
+                    let sign = self.value(v) == &LBool::True;
+                    let reason = self.reason[v].expect("There should be a reason clause for this variable");
                     self.undo(v);
-                    break Some(Lit::new(v, sign));
+                    break Some((Lit::new(v, sign), reason));
                 }
                 self.undo(v);
             };
@@ -307,12 +308,12 @@ impl Engine {
 
             // 3. Check for 1-UIP (First Unique Implication Point)
             if counter == 0 {
-                self.learnt[0] = !p.expect("There should be a literal to assert");
+                self.learnt[0] = !p.expect("There should be a literal to assert").0;
                 break;
             }
 
-            // 4. Update clause_id to the REASON why next_to_resolve was assigned
-            clause = self.reason[p.expect("There should be a literal to resolve away").var()].expect("There should be a reason clause");
+            // 4. Update clause to the reason of the variable we just resolved away
+            clause = p.expect("There should be a reason clause for this variable").1;
         }
 
         // 5. Final cleanup - undo all assignments made at this level
