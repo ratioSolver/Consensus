@@ -3,6 +3,7 @@ mod lit;
 use std::{
     collections::{HashMap, VecDeque},
     fmt::{Display, Formatter, Result},
+    mem,
 };
 
 use crate::lit::LBool;
@@ -62,7 +63,7 @@ impl Engine {
         if lits.is_empty() {
             return false;
         } else if lits.len() == 1 {
-            return self.enqueue(&lits[0], None);
+            return self.enqueue(lits[0], None);
         }
 
         let clause_id = self.clauses.len();
@@ -77,7 +78,7 @@ impl Engine {
         true
     }
 
-    fn enqueue(&mut self, lit: &Lit, reason: Option<usize>) -> bool {
+    fn enqueue(&mut self, lit: Lit, reason: Option<usize>) -> bool {
         match self.value(lit.var()) {
             LBool::Undef => {
                 self.assigns[lit.var()] = if lit.is_positive() { LBool::True } else { LBool::False };
@@ -93,6 +94,58 @@ impl Engine {
             LBool::True => lit.is_positive(),
             LBool::False => !lit.is_positive(),
         }
+    }
+
+    pub fn assert(&mut self, lit: Lit) -> bool {
+        self.enqueue(lit, None);
+        while let Some(var) = self.prop_q.pop_front() {
+            for clause in if self.value(var) == &LBool::True { mem::take(&mut self.neg_watches[var]) } else { mem::take(&mut self.pos_watches[var]) } {
+                if !self.propagate(clause, Lit::new(var, self.value(var) == &LBool::True)) {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
+    fn propagate(&mut self, clause_id: usize, lit: Lit) -> bool {
+        // Ensure the first literal is not the one that was just assigned
+        if self.clauses[clause_id][0].var() == lit.var() {
+            self.clauses[clause_id].swap(0, 1);
+        }
+        // Check if clause is already satisfied
+        if self.lit_value(&self.clauses[clause_id][0]) == LBool::True {
+            // Re-add the clause to the watch list
+            if lit.is_positive() {
+                self.pos_watches[lit.var()].push(clause_id);
+            } else {
+                self.neg_watches[lit.var()].push(clause_id);
+            }
+            return true;
+        }
+
+        // Find the next unassigned literal
+        for i in 2..self.clauses[clause_id].len() {
+            if self.lit_value(&self.clauses[clause_id][i]) != LBool::False {
+                // Move this literal to the second position
+                self.clauses[clause_id].swap(1, i);
+                // Update watch lists
+                if self.clauses[clause_id][1].is_positive() {
+                    self.pos_watches[self.clauses[clause_id][1].var()].push(clause_id);
+                } else {
+                    self.neg_watches[self.clauses[clause_id][1].var()].push(clause_id);
+                }
+                return true;
+            }
+        }
+
+        // If we reach here, the clause is either unit or unsatisfied
+        if lit.is_positive() {
+            self.neg_watches[lit.var()].push(clause_id);
+        } else {
+            self.pos_watches[lit.var()].push(clause_id);
+        }
+        self.enqueue(self.clauses[clause_id][0], Some(clause_id))
     }
 
     pub fn add_listener<F>(&mut self, var: usize, listener: F)
