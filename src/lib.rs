@@ -1,6 +1,6 @@
 use std::{
     cmp::Ordering,
-    collections::{HashMap, HashSet, VecDeque},
+    collections::{HashMap, VecDeque},
     fmt::{Display, Formatter, Result},
     mem,
     ops::Not,
@@ -118,6 +118,7 @@ impl PartialOrd for Lit {
 
 pub struct Engine {
     assigns: Vec<LBool>,                      // Current assignments of variables
+    seen: Vec<bool>,                          // Used during conflict analysis to track seen variables
     reason: Vec<Option<usize>>,               // Reason for each variable's assignment (index of the clause that caused the assignment)
     propagated_vars: Vec<Vec<usize>>,         // Variables that have been propagated by decision variables
     decision_vars: Vec<Option<usize>>,        // Decision variables that caused the propagation of each variable
@@ -134,6 +135,7 @@ impl Engine {
     pub fn new() -> Self {
         Engine {
             assigns: Vec::new(),
+            seen: Vec::new(),
             reason: Vec::new(),
             propagated_vars: Vec::new(),
             decision_vars: Vec::new(),
@@ -150,6 +152,7 @@ impl Engine {
     pub fn add_var(&mut self) -> usize {
         let var_id = self.assigns.len();
         self.assigns.push(LBool::Undef);
+        self.seen.push(false);
         self.reason.push(None);
         self.propagated_vars.push(Vec::new());
         self.decision_vars.push(None);
@@ -261,46 +264,58 @@ impl Engine {
         }
     }
 
-    fn analyze_conflict(&mut self, clause: usize) {
-        let mut seen = HashSet::new();
+    fn analyze_conflict(&mut self, mut clause: usize) {
+        self.seen.fill(false);
         let mut counter: usize = 0;
-        let mut p = Lit::default();
+        let mut p: Option<Lit> = None;
         self.learnt.clear();
         self.learnt.push(Lit::default()); // Placeholder for the asserting literal
 
         loop {
-            let reason: Vec<Lit> = self.clauses[clause].iter().filter(|lit| lit.var() != p.var()).map(|lit| !lit).collect();
-            for lit in reason {
-                if !seen.contains(&lit.var()) {
-                    seen.insert(lit.var());
-                    if let Some(decision_var) = self.decision_vars[lit.var()] {
-                        if decision_var == self.decision_var {
-                            counter += 1;
-                        } else {
-                            self.learnt.push(lit);
-                        }
+            // 1. Process the current clause (either the conflict or a reason)
+            for lit in &self.clauses[clause] {
+                let v = lit.var();
+
+                // Skip the variable we are currently resolving away
+                if Some(v) == p.map(|l| l.var()) {
+                    continue;
+                }
+
+                if !self.seen[v] {
+                    self.seen[v] = true;
+                    if self.decision_vars[v] == Some(self.decision_var) {
+                        counter += 1;
                     } else {
-                        self.learnt.push(lit);
+                        // This literal comes from a previous decision level
+                        self.learnt.push(*lit);
                     }
                 }
             }
 
-            loop {
-                let var = self.propagated_vars[self.decision_var].pop().unwrap();
-                let sign = self.value(var) == &LBool::True;
-                self.undo(var);
-                if !seen.contains(&var) {
-                    p = Lit::new(var, sign);
-                    break;
+            // 2. Find the next variable from the trail assigned at this level
+            p = loop {
+                let v = self.propagated_vars[self.decision_var].pop().expect("There should be a variable to resolve away");
+                let sign = self.value(v) == &LBool::True;
+                if !self.seen[v] {
+                    self.undo(v);
+                    break Some(Lit::new(v, sign));
                 }
-            }
+                self.undo(v);
+            };
+
             counter -= 1;
+
+            // 3. Check for 1-UIP (First Unique Implication Point)
             if counter == 0 {
-                self.learnt[0] = !p;
+                self.learnt[0] = !p.expect("There should be a literal to assert");
                 break;
             }
+
+            // 4. Update clause_id to the REASON why next_to_resolve was assigned
+            clause = self.reason[p.expect("There should be a literal to resolve away").var()].expect("There should be a reason clause");
         }
 
+        // 5. Final cleanup - undo all assignments made at this level
         while !self.propagated_vars[self.decision_var].is_empty() {
             let var = self.propagated_vars[self.decision_var].pop().unwrap();
             self.undo(var);
