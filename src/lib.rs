@@ -206,6 +206,39 @@ impl Engine {
         true
     }
 
+    pub fn assert(&mut self, lit: Lit) -> bool {
+        assert!(self.value(lit.var()) == &LBool::Undef, "Variable b{} is already assigned", lit.var());
+        self.decision_var = lit.var();
+        self.enqueue(lit, None);
+        while let Some(var) = self.prop_q.pop_front() {
+            for clause in if self.value(var) == &LBool::True { mem::take(&mut self.neg_watches[var]) } else { mem::take(&mut self.pos_watches[var]) } {
+                if !self.propagate(clause, Lit::new(var, self.value(var) == &LBool::True)) {
+                    self.analyze_conflict(clause);
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
+    pub fn get_conflict_explanation(&self) -> Option<Vec<Lit>> {
+        if self.learnt.is_empty() { None } else { Some(self.learnt.clone()) }
+    }
+
+    pub fn retract(&mut self, var: usize) {
+        assert!(self.value(var) != &LBool::Undef, "Variable b{} is not assigned", var);
+        if let Some(decision_var) = self.decision_vars[var] {
+            for propagated_var in mem::take(&mut self.propagated_vars[decision_var]) {
+                self.undo(propagated_var);
+            }
+        } else {
+            for propagated_var in mem::take(&mut self.propagated_vars[var]) {
+                self.undo(propagated_var);
+            }
+            self.undo(var);
+        }
+    }
+
     fn enqueue(&mut self, lit: Lit, reason: Option<usize>) -> bool {
         match self.value(lit.var()) {
             LBool::Undef => {
@@ -273,35 +306,6 @@ impl Engine {
             self.undo(var);
         }
         self.undo(self.decision_var);
-    }
-
-    pub fn assert(&mut self, lit: Lit) -> bool {
-        assert!(self.value(lit.var()) == &LBool::Undef, "Variable b{} is already assigned", lit.var());
-        self.decision_var = lit.var();
-        self.enqueue(lit, None);
-        while let Some(var) = self.prop_q.pop_front() {
-            for clause in if self.value(var) == &LBool::True { mem::take(&mut self.neg_watches[var]) } else { mem::take(&mut self.pos_watches[var]) } {
-                if !self.propagate(clause, Lit::new(var, self.value(var) == &LBool::True)) {
-                    self.analyze_conflict(clause);
-                    return false;
-                }
-            }
-        }
-        true
-    }
-
-    pub fn retract(&mut self, var: usize) {
-        assert!(self.value(var) != &LBool::Undef, "Variable b{} is not assigned", var);
-        if let Some(decision_var) = self.decision_vars[var] {
-            for propagated_var in mem::take(&mut self.propagated_vars[decision_var]) {
-                self.undo(propagated_var);
-            }
-        } else {
-            for propagated_var in mem::take(&mut self.propagated_vars[var]) {
-                self.undo(propagated_var);
-            }
-            self.undo(var);
-        }
     }
 
     fn undo(&mut self, var: usize) {
