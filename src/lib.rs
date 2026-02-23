@@ -58,6 +58,43 @@ impl Engine {
         }
     }
 
+    pub fn add_clause(&mut self, lits: Vec<Lit>) -> bool {
+        if lits.is_empty() {
+            return false;
+        } else if lits.len() == 1 {
+            return self.enqueue(&lits[0], None);
+        }
+
+        let clause_id = self.clauses.len();
+        for lit in &lits[..2] {
+            if lit.is_positive() {
+                self.pos_watches[lit.var()].push(clause_id);
+            } else {
+                self.neg_watches[lit.var()].push(clause_id);
+            }
+        }
+        self.clauses.push(lits.to_vec());
+        true
+    }
+
+    fn enqueue(&mut self, lit: &Lit, reason: Option<usize>) -> bool {
+        match self.value(lit.var()) {
+            LBool::Undef => {
+                self.assigns[lit.var()] = if lit.is_positive() { LBool::True } else { LBool::False };
+                self.reason[lit.var()] = reason;
+                self.prop_q.push_back(lit.var());
+                if let Some(listeners) = self.listeners.get(&lit.var()) {
+                    for listener in listeners {
+                        listener(self, lit.var());
+                    }
+                }
+                true
+            }
+            LBool::True => lit.is_positive(),
+            LBool::False => !lit.is_positive(),
+        }
+    }
+
     pub fn add_listener<F>(&mut self, var: usize, listener: F)
     where
         F: Fn(&Engine, usize) + 'static,
