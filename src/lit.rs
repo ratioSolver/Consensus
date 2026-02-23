@@ -4,17 +4,12 @@ use std::{
     ops::Not,
 };
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub enum LBool {
     True,
     False,
+    #[default]
     Undef,
-}
-
-impl Default for LBool {
-    fn default() -> Self {
-        LBool::Undef
-    }
 }
 
 impl Display for LBool {
