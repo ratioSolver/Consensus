@@ -126,6 +126,7 @@ pub struct Engine {
     neg_watches: Vec<Vec<usize>>,             // Clauses watching the negative literal of each variable
     clauses: Vec<Vec<Lit>>,                   // List of clauses in the engine
     prop_q: VecDeque<usize>,                  // Queue of variables to propagate
+    learnt: Vec<Lit>,                         // Temporary storage for learnt clauses during conflict analysis
     listeners: HashMap<usize, Vec<Callback>>, // Listeners for variable assignments
 }
 
@@ -141,6 +142,7 @@ impl Engine {
             neg_watches: Vec::new(),
             clauses: Vec::new(),
             prop_q: VecDeque::new(),
+            learnt: Vec::new(),
             listeners: HashMap::new(),
         }
     }
@@ -230,8 +232,8 @@ impl Engine {
         let mut seen = HashSet::new();
         let mut counter: usize = 0;
         let mut p = Lit::default();
-        let mut learnt = vec![];
-        learnt.push(Lit::default()); // Placeholder for the asserting literal
+        self.learnt.clear();
+        self.learnt.push(Lit::default()); // Placeholder for the asserting literal
 
         loop {
             let reason: Vec<Lit> = self.clauses[clause].iter().filter(|lit| lit.var() != p.var()).map(|lit| !lit).collect();
@@ -242,29 +244,35 @@ impl Engine {
                         if decision_var == self.decision_var {
                             counter += 1;
                         } else {
-                            learnt.push(lit);
+                            self.learnt.push(lit);
                         }
                     } else {
-                        learnt.push(lit);
+                        self.learnt.push(lit);
                     }
                 }
             }
 
             loop {
                 let var = self.propagated_vars[self.decision_var].pop().unwrap();
-                if seen.contains(&var) {
-                    p.x = var;
-                    p.sign = self.value(var) == &LBool::True;
+                let sign = self.value(var) == &LBool::True;
+                self.undo(var);
+                if !seen.contains(&var) {
+                    p = Lit::new(var, sign);
                     break;
                 }
-                self.undo(var);
             }
-
+            counter -= 1;
             if counter == 0 {
-                learnt[0] = !p;
+                self.learnt[0] = !p;
                 break;
             }
         }
+
+        while !self.propagated_vars[self.decision_var].is_empty() {
+            let var = self.propagated_vars[self.decision_var].pop().unwrap();
+            self.undo(var);
+        }
+        self.undo(self.decision_var);
     }
 
     pub fn assert(&mut self, lit: Lit) -> bool {
