@@ -1,0 +1,11 @@
+[package]
+name = "consensus"
+version = "0.1.0"
+authors = ["Riccardo De Benedictis"]
+edition = "2024"
+description = "A high-performance CDCL-based Constraint Engine written in pure Rust, focusing on safety and solver efficiency"
+readme = "README.md"
+repository = "https://github.com/ratioSolver/Consensus"
+license-file = "LICENSE.txt"
+
+[dependencies]
