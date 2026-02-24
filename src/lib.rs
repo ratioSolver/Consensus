@@ -252,11 +252,9 @@ impl Engine {
     }
 
     fn analyze_conflict(&mut self, mut clause: usize) {
-        println!("Engine before conflict analysis:\n{}", self);
-
         self.seen.fill(false);
         let mut counter: usize = 0;
-        let mut p: Option<(Lit, usize)> = None;
+        let mut p: Option<(Lit, Option<usize>)> = None;
         self.learnt.clear();
         self.learnt.push(Lit::default()); // Placeholder for the asserting literal
 
@@ -286,7 +284,7 @@ impl Engine {
                 let v = self.propagated_vars.pop().expect("There should be a variable to resolve away");
                 if self.seen[v] {
                     let sign = self.value(v) == &LBool::True;
-                    let reason = self.reason[v].expect("There should be a reason clause for this variable");
+                    let reason = self.reason[v];
                     self.undo(v);
                     break Some((Lit::new(v, sign), reason));
                 }
@@ -302,7 +300,7 @@ impl Engine {
             }
 
             // 4. Update clause to the reason of the variable we just resolved away
-            clause = p.expect("There should be a reason clause for this variable").1;
+            clause = p.expect("There should be a reason clause for this variable").1.expect("There should be a reason clause for this variable");
         }
 
         // 5. Final cleanup - undo all assignments made at this level
