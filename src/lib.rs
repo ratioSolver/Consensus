@@ -21,7 +21,7 @@
 //! ```
 use std::{
     cmp::Ordering,
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     fmt::{Display, Formatter, Result},
     mem,
     ops::Not,
@@ -166,7 +166,6 @@ impl Display for Clause {
 /// ```
 pub struct Engine {
     assigns: Vec<LBool>,                      // Current assignments of variables
-    seen: Vec<bool>,                          // Used during conflict analysis to track seen variables
     reason: Vec<Option<usize>>,               // Reason for each variable's assignment (index of the clause that caused the assignment)
     propagated_vars: Vec<usize>,              // Variables that have been propagated by decision variables
     decision_vars: Vec<Option<usize>>,        // Decision variables that caused the propagation of each variable
@@ -189,7 +188,6 @@ impl Engine {
     pub fn new() -> Self {
         Engine {
             assigns: Vec::new(),
-            seen: Vec::new(),
             reason: Vec::new(),
             propagated_vars: Vec::new(),
             decision_vars: Vec::new(),
@@ -206,7 +204,6 @@ impl Engine {
     pub fn add_var(&mut self) -> usize {
         let var_id = self.assigns.len();
         self.assigns.push(LBool::Undef);
-        self.seen.push(false);
         self.reason.push(None);
         self.decision_vars.push(None);
         self.pos_watches.push(Vec::new());
@@ -314,7 +311,7 @@ impl Engine {
     }
 
     fn analyze_conflict(&mut self, mut clause: usize) {
-        self.seen.fill(false);
+        let mut seen = HashSet::new();
         let mut counter: usize = 0;
         let mut p: Option<(Lit, Option<usize>)> = None;
         self.learnt.clear();
@@ -330,8 +327,8 @@ impl Engine {
                     continue;
                 }
 
-                if !self.seen[v] {
-                    self.seen[v] = true;
+                if !seen.contains(&v) {
+                    seen.insert(v);
                     if self.decision_vars[v] == Some(self.decision_var) {
                         counter += 1;
                     } else {
@@ -344,7 +341,7 @@ impl Engine {
             // 2. Find the next variable from the trail assigned at this level
             p = loop {
                 let v = self.propagated_vars.pop().expect("There should be a variable to resolve away");
-                if self.seen[v] {
+                if seen.contains(&v) {
                     let sign = self.value(v) == &LBool::True;
                     let reason = self.reason[v];
                     self.undo(v);
