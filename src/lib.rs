@@ -9,6 +9,7 @@ use std::{
 type Callback = Box<dyn Fn(&Engine, usize)>;
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
+#[repr(u8)]
 pub enum LBool {
     True,
     False,
