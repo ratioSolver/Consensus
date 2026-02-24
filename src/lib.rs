@@ -276,7 +276,7 @@ impl Engine {
                         counter += 1;
                     } else {
                         // This literal comes from a previous decision level
-                        self.learnt.push(!lit);
+                        self.learnt.push(lit.clone());
                     }
                 }
             }
@@ -284,7 +284,7 @@ impl Engine {
             // 2. Find the next variable from the trail assigned at this level
             p = loop {
                 let v = self.propagated_vars.pop().expect("There should be a variable to resolve away");
-                if !self.seen[v] {
+                if self.seen[v] {
                     let sign = self.value(v) == &LBool::True;
                     let reason = self.reason[v].expect("There should be a reason clause for this variable");
                     self.undo(v);
@@ -313,7 +313,7 @@ impl Engine {
         self.undo(self.decision_var);
     }
 
-    fn undo(&mut self, var: usize) {
+    pub fn undo(&mut self, var: usize) {
         self.assigns[var] = LBool::Undef;
         self.reason[var] = None;
         self.decision_vars[var] = None;
@@ -525,7 +525,7 @@ mod tests {
         engine.assert(neg(x1));
 
         let explanation = engine.get_conflict_explanation().expect("There should be a conflict explanation");
-        let expected_explanation = vec![neg(x4), pos(x8), pos(x9)];
+        let expected_explanation = vec![neg(x4), pos(x9), pos(x8)];
         assert_eq!(explanation, expected_explanation, "Conflict explanation should match expected");
     }
 }
