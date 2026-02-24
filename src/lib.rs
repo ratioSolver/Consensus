@@ -117,11 +117,13 @@ impl PartialOrd for Lit {
     }
 }
 
-pub struct Clause(pub Vec<Lit>);
+struct Clause {
+    lits: Vec<Lit>,
+}
 
 impl Display for Clause {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        let lits: Vec<String> = self.0.iter().map(|l| l.to_string()).collect();
+        let lits: Vec<String> = self.lits.iter().map(|l| l.to_string()).collect();
         write!(f, "{}", lits.join(" ∨ "))
     }
 }
@@ -214,7 +216,7 @@ impl Engine {
                 self.neg_watches[lit.var()].push(clause_id);
             }
         }
-        self.clauses.push(Clause(lits));
+        self.clauses.push(Clause { lits });
         true
     }
 
@@ -278,7 +280,7 @@ impl Engine {
 
         loop {
             // 1. Process the current clause (either the conflict or a reason)
-            for lit in &self.clauses[clause].0 {
+            for lit in &self.clauses[clause].lits {
                 let v = lit.var();
 
                 // Skip the variable we are currently resolving away
@@ -337,11 +339,11 @@ impl Engine {
 
     fn propagate(&mut self, clause_id: usize, lit: Lit) -> bool {
         // Ensure the first literal is not the one that was just assigned
-        if self.clauses[clause_id].0[0].var() == lit.var() {
-            self.clauses[clause_id].0.swap(0, 1);
+        if self.clauses[clause_id].lits[0].var() == lit.var() {
+            self.clauses[clause_id].lits.swap(0, 1);
         }
         // Check if clause is already satisfied
-        if self.lit_value(&self.clauses[clause_id].0[0]) == LBool::True {
+        if self.lit_value(&self.clauses[clause_id].lits[0]) == LBool::True {
             // Re-add the clause to the watch list
             if lit.is_positive() {
                 self.pos_watches[lit.var()].push(clause_id);
@@ -352,15 +354,15 @@ impl Engine {
         }
 
         // Find the next unassigned literal
-        for i in 2..self.clauses[clause_id].0.len() {
-            if self.lit_value(&self.clauses[clause_id].0[i]) != LBool::False {
+        for i in 2..self.clauses[clause_id].lits.len() {
+            if self.lit_value(&self.clauses[clause_id].lits[i]) != LBool::False {
                 // Move this literal to the second position
-                self.clauses[clause_id].0.swap(1, i);
+                self.clauses[clause_id].lits.swap(1, i);
                 // Update watch lists
-                if self.clauses[clause_id].0[1].is_positive() {
-                    self.pos_watches[self.clauses[clause_id].0[1].var()].push(clause_id);
+                if self.clauses[clause_id].lits[1].is_positive() {
+                    self.pos_watches[self.clauses[clause_id].lits[1].var()].push(clause_id);
                 } else {
-                    self.neg_watches[self.clauses[clause_id].0[1].var()].push(clause_id);
+                    self.neg_watches[self.clauses[clause_id].lits[1].var()].push(clause_id);
                 }
                 return true;
             }
@@ -372,7 +374,7 @@ impl Engine {
         } else {
             self.pos_watches[lit.var()].push(clause_id);
         }
-        self.enqueue(self.clauses[clause_id].0[0], Some(clause_id))
+        self.enqueue(self.clauses[clause_id].lits[0], Some(clause_id))
     }
 
     pub fn add_listener<F>(&mut self, var: usize, listener: F)
