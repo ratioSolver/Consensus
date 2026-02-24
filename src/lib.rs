@@ -120,7 +120,7 @@ pub struct Engine {
     assigns: Vec<LBool>,                      // Current assignments of variables
     seen: Vec<bool>,                          // Used during conflict analysis to track seen variables
     reason: Vec<Option<usize>>,               // Reason for each variable's assignment (index of the clause that caused the assignment)
-    propagated_vars: Vec<Vec<usize>>,         // Variables that have been propagated by decision variables
+    propagated_vars: Vec<usize>,              // Variables that have been propagated by decision variables
     decision_vars: Vec<Option<usize>>,        // Decision variables that caused the propagation of each variable
     decision_var: usize,                      // Current decision variable index
     pos_watches: Vec<Vec<usize>>,             // Clauses watching the positive literal of each variable
@@ -154,7 +154,6 @@ impl Engine {
         self.assigns.push(LBool::Undef);
         self.seen.push(false);
         self.reason.push(None);
-        self.propagated_vars.push(Vec::new());
         self.decision_vars.push(None);
         self.pos_watches.push(Vec::new());
         self.neg_watches.push(Vec::new());
@@ -212,6 +211,7 @@ impl Engine {
     pub fn assert(&mut self, lit: Lit) -> bool {
         assert!(self.value(lit.var()) == &LBool::Undef, "Variable b{} is already assigned", lit.var());
         self.decision_var = lit.var();
+        self.propagated_vars.clear();
         self.enqueue(lit, None);
         while let Some(var) = self.prop_q.pop_front() {
             for clause in if self.value(var) == &LBool::True { mem::take(&mut self.neg_watches[var]) } else { mem::take(&mut self.pos_watches[var]) } {
@@ -228,27 +228,13 @@ impl Engine {
         if self.learnt.is_empty() { None } else { Some(self.learnt.clone()) }
     }
 
-    pub fn retract(&mut self, var: usize) {
-        assert!(self.value(var) != &LBool::Undef, "Variable b{} is not assigned", var);
-        if let Some(decision_var) = self.decision_vars[var] {
-            for propagated_var in mem::take(&mut self.propagated_vars[decision_var]) {
-                self.undo(propagated_var);
-            }
-        } else {
-            for propagated_var in mem::take(&mut self.propagated_vars[var]) {
-                self.undo(propagated_var);
-            }
-            self.undo(var);
-        }
-    }
-
     fn enqueue(&mut self, lit: Lit, reason: Option<usize>) -> bool {
         match self.value(lit.var()) {
             LBool::Undef => {
                 self.assigns[lit.var()] = if lit.is_positive() { LBool::True } else { LBool::False };
                 self.reason[lit.var()] = reason;
+                self.propagated_vars.push(lit.var());
                 if lit.var() != self.decision_var {
-                    self.propagated_vars[self.decision_var].push(lit.var());
                     self.decision_vars[lit.var()] = Some(self.decision_var);
                 }
                 self.prop_q.push_back(lit.var());
@@ -265,6 +251,8 @@ impl Engine {
     }
 
     fn analyze_conflict(&mut self, mut clause: usize) {
+        println!("Engine before conflict analysis:\n{}", self);
+
         self.seen.fill(false);
         let mut counter: usize = 0;
         let mut p: Option<(Lit, usize)> = None;
@@ -294,7 +282,7 @@ impl Engine {
 
             // 2. Find the next variable from the trail assigned at this level
             p = loop {
-                let v = self.propagated_vars[self.decision_var].pop().expect("There should be a variable to resolve away");
+                let v = self.propagated_vars.pop().expect("There should be a variable to resolve away");
                 if !self.seen[v] {
                     let sign = self.value(v) == &LBool::True;
                     let reason = self.reason[v].expect("There should be a reason clause for this variable");
@@ -317,15 +305,14 @@ impl Engine {
         }
 
         // 5. Final cleanup - undo all assignments made at this level
-        while !self.propagated_vars[self.decision_var].is_empty() {
-            let var = self.propagated_vars[self.decision_var].pop().unwrap();
+        while !self.propagated_vars.is_empty() {
+            let var = self.propagated_vars.pop().unwrap();
             self.undo(var);
         }
         self.undo(self.decision_var);
     }
 
     fn undo(&mut self, var: usize) {
-        assert!(self.propagated_vars[var].is_empty(), "Variable b{} has propagated variables that must be retracted first", var);
         self.assigns[var] = LBool::Undef;
         self.reason[var] = None;
         self.decision_vars[var] = None;
@@ -463,25 +450,6 @@ mod tests {
         // This should trigger propagation on c.
         engine.assert(neg(b));
         assert_eq!(*engine.value(c), LBool::True, "c must be true now");
-    }
-
-    #[test]
-    fn test_retraction_logic() {
-        let mut engine = Engine::new();
-        let a = engine.add_var();
-        let b = engine.add_var();
-
-        // (¬a ∨ b)
-        engine.add_clause(vec![neg(a), pos(b)]);
-
-        engine.assert(pos(a));
-        assert_eq!(*engine.value(b), LBool::True);
-
-        // Retract a
-        engine.retract(a);
-
-        assert_eq!(*engine.value(a), LBool::Undef, "a should be undone");
-        assert_eq!(*engine.value(b), LBool::Undef, "b should be undone automatically");
     }
 
     #[test]
