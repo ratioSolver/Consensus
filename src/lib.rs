@@ -117,8 +117,8 @@ impl PartialOrd for Lit {
     }
 }
 
-struct Clause {
-    lits: Vec<Lit>,
+pub struct Clause {
+    pub lits: Vec<Lit>,
 }
 
 impl Display for Clause {
@@ -245,8 +245,8 @@ impl Engine {
         true
     }
 
-    pub fn get_conflict_explanation(&self) -> Option<Vec<Lit>> {
-        if self.learnt.is_empty() { None } else { Some(self.learnt.clone()) }
+    pub fn get_conflict_explanation(&mut self) -> Option<Clause> {
+        if self.learnt.is_empty() { None } else { Some(Clause { lits: mem::take(&mut self.learnt) }) }
     }
 
     fn enqueue(&mut self, lit: Lit, reason: Option<usize>) -> bool {
@@ -556,8 +556,8 @@ mod tests {
         let explanation = engine.get_conflict_explanation().unwrap();
         // The explanation should ideally contain the 1-UIP literal
         // and the "reason" variables from lower levels.
-        assert!(!explanation.is_empty());
-        println!("Conflict explanation: {:?}", explanation);
+        assert!(!explanation.lits.is_empty());
+        println!("Conflict explanation: {}", explanation);
     }
 
     #[test]
@@ -598,6 +598,6 @@ mod tests {
 
         let explanation = engine.get_conflict_explanation().expect("There should be a conflict explanation");
         let expected_explanation = vec![neg(x4), pos(x9), pos(x8)];
-        assert_eq!(explanation, expected_explanation, "Conflict explanation should match expected");
+        assert_eq!(explanation.lits, expected_explanation, "Conflict explanation should match expected");
     }
 }
