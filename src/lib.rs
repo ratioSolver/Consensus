@@ -179,6 +179,12 @@ pub struct Engine {
     listeners: HashMap<usize, Vec<Callback>>, // Listeners for variable assignments
 }
 
+impl Default for Engine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Engine {
     pub fn new() -> Self {
         Engine {
