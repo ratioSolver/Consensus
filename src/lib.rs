@@ -1,3 +1,24 @@
+//! # SAT Solver Engine
+//!
+//! This module provides a core CDCL (Conflict-Driven Clause Learning) engine
+//! utilizing the Two-Watched Literal (2WL) scheme for efficient unit propagation.
+//!
+//! ## Core Logic
+//! The engine works by:
+//! 1. **Assignment**: Values are assigned to variables via `assert`.
+//! 2. **Propagation**: The engine uses watch lists to find unit clauses.
+//! 3. **Conflict Analysis**: If a contradiction is found, the engine performs
+//!    1-UIP (Unique Implication Point) analysis to learn a new clause.
+//!
+//! ## Example
+//! ```rust
+//! # use consensus::{Engine, pos, neg};
+//! let mut engine = Engine::new();
+//! let a = engine.add_var();
+//! let b = engine.add_var();
+//! engine.add_clause(vec![neg(a), pos(b)]); // (¬a ∨ b)
+//! engine.assert(pos(a));                   // Forces b to be True
+//! ```
 use std::{
     cmp::Ordering,
     collections::{HashMap, VecDeque},
@@ -128,6 +149,21 @@ impl Display for Clause {
     }
 }
 
+/// A CDCL-based SAT solver engine.
+///
+/// The `Engine` manages variable assignments, watch lists for unit propagation,
+/// and performs conflict analysis to learn new clauses.
+///
+/// # Examples
+/// ```
+/// # use consensus::{Engine, pos, neg, LBool};
+/// let mut engine = Engine::new();
+/// let a = engine.add_var();
+/// let b = engine.add_var();
+/// engine.add_clause(vec![neg(a), pos(b)]); // (¬a ∨ b)
+/// engine.assert(pos(a));                   // Forces b to be True
+/// assert_eq!(*engine.value(b), LBool::True, "b should be propagated by unit clause");
+/// ```
 pub struct Engine {
     assigns: Vec<LBool>,                      // Current assignments of variables
     seen: Vec<bool>,                          // Used during conflict analysis to track seen variables
