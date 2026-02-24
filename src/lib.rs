@@ -117,6 +117,15 @@ impl PartialOrd for Lit {
     }
 }
 
+pub struct Clause(pub Vec<Lit>);
+
+impl Display for Clause {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        let lits: Vec<String> = self.0.iter().map(|l| l.to_string()).collect();
+        write!(f, "{}", lits.join(" ∨ "))
+    }
+}
+
 pub struct Engine {
     assigns: Vec<LBool>,                      // Current assignments of variables
     seen: Vec<bool>,                          // Used during conflict analysis to track seen variables
@@ -126,7 +135,7 @@ pub struct Engine {
     decision_var: usize,                      // Current decision variable index
     pos_watches: Vec<Vec<usize>>,             // Clauses watching the positive literal of each variable
     neg_watches: Vec<Vec<usize>>,             // Clauses watching the negative literal of each variable
-    clauses: Vec<Vec<Lit>>,                   // List of clauses in the engine
+    clauses: Vec<Clause>,                     // List of clauses in the engine
     prop_q: VecDeque<usize>,                  // Queue of variables to propagate
     learnt: Vec<Lit>,                         // Temporary storage for learnt clauses during conflict analysis
     listeners: HashMap<usize, Vec<Callback>>, // Listeners for variable assignments
@@ -205,7 +214,7 @@ impl Engine {
                 self.neg_watches[lit.var()].push(clause_id);
             }
         }
-        self.clauses.push(lits.to_vec());
+        self.clauses.push(Clause(lits));
         true
     }
 
@@ -215,9 +224,18 @@ impl Engine {
         self.propagated_vars.clear();
         self.enqueue(lit, None);
         while let Some(var) = self.prop_q.pop_front() {
-            for clause in if self.value(var) == &LBool::True { mem::take(&mut self.neg_watches[var]) } else { mem::take(&mut self.pos_watches[var]) } {
-                if !self.propagate(clause, Lit::new(var, self.value(var) == &LBool::True)) {
-                    self.analyze_conflict(clause);
+            let watches = if self.value(var) == &LBool::True { mem::take(&mut self.neg_watches[var]) } else { mem::take(&mut self.pos_watches[var]) };
+            for i in 0..watches.len() {
+                if !self.propagate(watches[i], Lit::new(var, self.value(var) == &LBool::True)) {
+                    for j in i..watches.len() {
+                        if self.value(var) == &LBool::True {
+                            self.neg_watches[var].push(watches[j]);
+                        } else {
+                            self.pos_watches[var].push(watches[j]);
+                        }
+                    }
+                    self.prop_q.clear();
+                    self.analyze_conflict(watches[i]);
                     return false;
                 }
             }
@@ -260,7 +278,7 @@ impl Engine {
 
         loop {
             // 1. Process the current clause (either the conflict or a reason)
-            for lit in &self.clauses[clause] {
+            for lit in &self.clauses[clause].0 {
                 let v = lit.var();
 
                 // Skip the variable we are currently resolving away
@@ -319,11 +337,11 @@ impl Engine {
 
     fn propagate(&mut self, clause_id: usize, lit: Lit) -> bool {
         // Ensure the first literal is not the one that was just assigned
-        if self.clauses[clause_id][0].var() == lit.var() {
-            self.clauses[clause_id].swap(0, 1);
+        if self.clauses[clause_id].0[0].var() == lit.var() {
+            self.clauses[clause_id].0.swap(0, 1);
         }
         // Check if clause is already satisfied
-        if self.lit_value(&self.clauses[clause_id][0]) == LBool::True {
+        if self.lit_value(&self.clauses[clause_id].0[0]) == LBool::True {
             // Re-add the clause to the watch list
             if lit.is_positive() {
                 self.pos_watches[lit.var()].push(clause_id);
@@ -334,15 +352,15 @@ impl Engine {
         }
 
         // Find the next unassigned literal
-        for i in 2..self.clauses[clause_id].len() {
-            if self.lit_value(&self.clauses[clause_id][i]) != LBool::False {
+        for i in 2..self.clauses[clause_id].0.len() {
+            if self.lit_value(&self.clauses[clause_id].0[i]) != LBool::False {
                 // Move this literal to the second position
-                self.clauses[clause_id].swap(1, i);
+                self.clauses[clause_id].0.swap(1, i);
                 // Update watch lists
-                if self.clauses[clause_id][1].is_positive() {
-                    self.pos_watches[self.clauses[clause_id][1].var()].push(clause_id);
+                if self.clauses[clause_id].0[1].is_positive() {
+                    self.pos_watches[self.clauses[clause_id].0[1].var()].push(clause_id);
                 } else {
-                    self.neg_watches[self.clauses[clause_id][1].var()].push(clause_id);
+                    self.neg_watches[self.clauses[clause_id].0[1].var()].push(clause_id);
                 }
                 return true;
             }
@@ -354,7 +372,7 @@ impl Engine {
         } else {
             self.pos_watches[lit.var()].push(clause_id);
         }
-        self.enqueue(self.clauses[clause_id][0], Some(clause_id))
+        self.enqueue(self.clauses[clause_id].0[0], Some(clause_id))
     }
 
     pub fn add_listener<F>(&mut self, var: usize, listener: F)
@@ -371,8 +389,7 @@ impl Display for Engine {
             writeln!(f, "b{}: {:?}", i, val)?;
         }
         for clause in &self.clauses {
-            let lits: Vec<String> = clause.iter().map(|l| l.to_string()).collect();
-            writeln!(f, "{}", lits.join(" ∨ "))?;
+            writeln!(f, "{}", clause)?;
         }
         Ok(())
     }
@@ -484,6 +501,61 @@ mod tests {
         let a = engine.add_var();
         engine.assert(pos(a));
         engine.assert(neg(a)); // Should panic
+    }
+
+    #[test]
+    fn test_diamond_propagation() {
+        let mut engine = Engine::new();
+        let x1 = engine.add_var();
+        let x2 = engine.add_var();
+        let x3 = engine.add_var();
+        let x4 = engine.add_var();
+
+        // x1 -> x2  (¬x1 ∨ x2)
+        engine.add_clause(vec![neg(x1), pos(x2)]);
+        // x1 -> x3  (¬x1 ∨ x3)
+        engine.add_clause(vec![neg(x1), pos(x3)]);
+        // (x2 ∧ x3) -> x4 (¬x2 ∨ ¬x3 ∨ x4)
+        engine.add_clause(vec![neg(x2), neg(x3), pos(x4)]);
+
+        engine.assert(pos(x1));
+
+        assert_eq!(*engine.value(x4), LBool::True, "x4 should be forced via x2 and x3");
+    }
+
+    #[test]
+    fn test_complex_conflict_1uip() {
+        let mut engine = Engine::new();
+        let vars: Vec<usize> = (0..10).map(|_| engine.add_var()).collect();
+
+        // Setup a chain: x1 -> x2 -> x3 -> x4
+        engine.add_clause(vec![neg(vars[1]), pos(vars[2])]);
+        engine.add_clause(vec![neg(vars[2]), pos(vars[3])]);
+        engine.add_clause(vec![neg(vars[3]), pos(vars[4])]);
+
+        // Create a conflict path:
+        // (x4 ∧ x5) -> Conflict
+        // x5 is another decision or forced var
+        engine.add_clause(vec![neg(vars[4]), neg(vars[5])]);
+
+        // Another path to the same conflict
+        // (x3 ∧ x6) -> x5
+        engine.add_clause(vec![neg(vars[3]), neg(vars[6]), pos(vars[5])]);
+
+        // Assert "side" variables that set the stage
+        engine.assert(pos(vars[6]));
+
+        // Now trigger the chain
+        // This should cause: x1 -> x2 -> x3 -> x4 -> conflict with x5
+        let success = engine.assert(pos(vars[1]));
+
+        assert!(!success, "Should detect a conflict");
+
+        let explanation = engine.get_conflict_explanation().unwrap();
+        // The explanation should ideally contain the 1-UIP literal
+        // and the "reason" variables from lower levels.
+        assert!(!explanation.is_empty());
+        println!("Conflict explanation: {:?}", explanation);
     }
 
     #[test]
