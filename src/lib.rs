@@ -68,6 +68,9 @@ pub struct Lit {
     sign: bool,
 }
 
+pub const TRUE_LIT: Lit = Lit { x: 0, sign: true };
+pub const FALSE_LIT: Lit = Lit { x: 0, sign: false };
+
 impl Lit {
     pub fn new(x: usize, sign: bool) -> Self {
         Lit { x, sign }
@@ -186,7 +189,7 @@ impl Default for Engine {
 
 impl Engine {
     pub fn new() -> Self {
-        Engine {
+        let mut e = Engine {
             assigns: Vec::new(),
             reason: Vec::new(),
             propagated_vars: Vec::new(),
@@ -198,7 +201,10 @@ impl Engine {
             prop_q: VecDeque::new(),
             learnt: Vec::new(),
             listeners: HashMap::new(),
-        }
+        };
+        e.add_var();
+        e.add_clause(vec![pos(0)]);
+        e
     }
 
     pub fn add_var(&mut self) -> usize {
