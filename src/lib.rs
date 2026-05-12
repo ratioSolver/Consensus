@@ -274,11 +274,11 @@ impl Engine {
             let watches = if self.value(var) == &LBool::True { mem::take(&mut self.neg_watches[var]) } else { mem::take(&mut self.pos_watches[var]) };
             for i in 0..watches.len() {
                 if !self.propagate(watches[i], Lit::new(var, self.value(var) == &LBool::True)) {
-                    for j in i..watches.len() {
+                    for &watch in watches.iter().skip(i) {
                         if self.value(var) == &LBool::True {
-                            self.neg_watches[var].push(watches[j]);
+                            self.neg_watches[var].push(watch);
                         } else {
-                            self.pos_watches[var].push(watches[j]);
+                            self.pos_watches[var].push(watch);
                         }
                     }
                     self.prop_q.clear();
@@ -339,7 +339,7 @@ impl Engine {
                         counter += 1;
                     } else {
                         // This literal comes from a previous decision level
-                        self.learnt.push(lit.clone());
+                        self.learnt.push(*lit);
                     }
                 }
             }
@@ -369,8 +369,7 @@ impl Engine {
         }
 
         // 5. Final cleanup - undo all assignments made at this level
-        while !self.propagated_vars.is_empty() {
-            let var = self.propagated_vars.pop().unwrap();
+        while let Some(var) = self.propagated_vars.pop() {
             self.undo(var);
         }
         self.undo(self.decision_var);
