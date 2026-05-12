@@ -1,5 +1,5 @@
 [package]
-name = "consensus"
+name = "watchsat"
 version = "0.1.0"
 authors = ["Riccardo De Benedictis"]
 edition = "2024"

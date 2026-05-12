@@ -12,7 +12,7 @@
 //!
 //! ## Example
 //! ```rust
-//! # use consensus::{Engine, pos, neg};
+//! # use watchsat::{Engine, pos, neg};
 //! let mut engine = Engine::new();
 //! let a = engine.add_var();
 //! let b = engine.add_var();
@@ -53,7 +53,7 @@ impl Display for LBool {
 ///
 /// # Examples
 /// ```
-/// # use consensus::{Lit, pos, neg};
+/// # use watchsat::{Lit, pos, neg};
 /// let a = pos(0); // Represents the literal b0
 /// let not_a = neg(0); // Represents the literal ¬b0
 ///
@@ -159,7 +159,7 @@ impl Display for Clause {
 ///
 /// # Examples
 /// ```
-/// # use consensus::{Engine, pos, neg, LBool};
+/// # use watchsat::{Engine, pos, neg, LBool};
 /// let mut engine = Engine::new();
 /// let a = engine.add_var();
 /// let b = engine.add_var();
