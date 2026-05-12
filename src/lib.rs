@@ -27,7 +27,7 @@ use std::{
     ops::Not,
 };
 
-type Callback = Box<dyn Fn(usize)>;
+type Callback = Box<dyn Fn(usize, LBool)>;
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 #[repr(u8)]
@@ -306,7 +306,7 @@ impl Engine {
                 self.prop_q.push_back(lit.var());
                 if let Some(listeners) = self.listeners.get(&lit.var()) {
                     for listener in listeners {
-                        listener(lit.var());
+                        listener(lit.var(), self.value(lit.var()).clone());
                     }
                 }
                 true
@@ -424,7 +424,7 @@ impl Engine {
 
     pub fn add_listener<F>(&mut self, var: usize, listener: F)
     where
-        F: Fn(usize) + 'static,
+        F: Fn(usize, LBool) + 'static,
     {
         self.listeners.entry(var).or_default().push(Box::new(listener));
     }
@@ -527,7 +527,7 @@ mod tests {
         let triggered_clone = Arc::clone(&triggered);
 
         // Add listener to b
-        engine.add_listener(b, move |_| {
+        engine.add_listener(b, move |_, _| {
             let mut val = triggered_clone.lock().unwrap();
             *val = true;
         });
